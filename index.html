@@ -192,21 +192,17 @@
     }
 
     function canPlace(grid, r,c,len, orient){
+      // Проверяем, помещается ли корабль в границы поля
       if(orient==='h'){
         if(c+len>SIZE) return false;
-        for(let j=c;j<c+len;j++) if(grid[coordToIndex(r,j)]===1) return false;
-        for(let i=Math.max(0,r-1);i<=Math.min(SIZE-1,r+1);i++){
-          for(let j=Math.max(0,c-1);j<=Math.min(SIZE-1,c+len);j++){
-            if(grid[coordToIndex(i,j)]===1) return false;
-          }
-        }
       } else {
         if(r+len>SIZE) return false;
-        for(let i=r;i<r+len;i++) if(grid[coordToIndex(i,c)]===1) return false;
-        for(let i=Math.max(0,r-1);i<=Math.min(SIZE-1,r+len);i++){
-          for(let j=Math.max(0,c-1);j<=Math.min(SIZE-1,c+1);j++){
-            if(grid[coordToIndex(i,j)]===1) return false;
-          }
+      }
+      
+      // Проверяем, не занято ли место кораблем и нет ли соседних кораблей
+      for(let i = Math.max(0, r-1); i <= Math.min(SIZE-1, orient==='h' ? r+1 : r+len); i++){
+        for(let j = Math.max(0, c-1); j <= Math.min(SIZE-1, orient==='h' ? c+len : c+1); j++){
+          if(grid[coordToIndex(i,j)] === 1) return false;
         }
       }
       return true;
@@ -316,60 +312,192 @@
     }
 
     function playerShoot(idx){
-      if(enemyGrid[idx]===2||enemyGrid[idx]===3) return; 
+      if(enemyGrid[idx]===2||enemyGrid[idx]===3||enemyGrid[idx]===4) return; 
       if(enemyGrid[idx]===1){
-        enemyGrid[idx]=3; log('Вы попали в ' + formatIdx(idx));
+        enemyGrid[idx]=3; 
+        log('Вы попали в ' + formatIdx(idx));
         markShipDamage(enemyShips, idx, 'enemy');
-        render(); checkSunk(enemyShips, 'enemy');
+        render(); 
+        checkSunk(enemyShips, 'enemy');
         checkWin();
+        // Игрок продолжает ход при попадании
+        if(gameStarted) {
+          log('Ваш ход продолжается!');
+        }
       } else {
-        enemyGrid[idx]=2; log('Вы промахнулись: ' + formatIdx(idx)); playerTurn=false; turnIndicator.textContent='ИИ'; render(); setTimeout(aiTurn, 700);
+        enemyGrid[idx]=2; 
+        log('Вы промахнулись: ' + formatIdx(idx)); 
+        playerTurn=false; 
+        turnIndicator.textContent='ИИ'; 
+        render(); 
+        setTimeout(aiTurn, 700);
       }
     }
 
     function aiTurn(){
+      if(!gameStarted || playerTurn) return;
+      
       const idx = aiPick();
-      if(playerGrid[idx]===2||playerGrid[idx]===3){ 
-        aiTurn(); return;
+      if(playerGrid[idx]===2||playerGrid[idx]===3||playerGrid[idx]===4){ 
+        setTimeout(aiTurn, 100); return;
       }
-      if(playerGrid[idx]===1){ playerGrid[idx]=3; log('ИИ попал в ' + formatIdx(idx)); aiMemory.mode='target'; aiMemory.lastHit=idx; aiMemory.hits.push(idx); markShipDamage(playerShips, idx, 'player'); render(); checkSunk(playerShips, 'player'); // AI gets another turn
-        checkWin(); setTimeout(aiTurn, 500);
-      } else { playerGrid[idx]=2; log('ИИ промахнулся: ' + formatIdx(idx)); playerTurn=true; turnIndicator.textContent='Вы'; render(); }
+      
+      if(playerGrid[idx]===1){ 
+        playerGrid[idx]=3; 
+        log('ИИ попал в ' + formatIdx(idx)); 
+        aiMemory.mode='target'; 
+        aiMemory.lastHit=idx; 
+        aiMemory.hits.push(idx); 
+        markShipDamage(playerShips, idx, 'player'); 
+        render(); 
+        const sunk = checkSunk(playerShips, 'player');
+        checkWin(); 
+        
+        // ИИ продолжает ход при попадании
+        if(gameStarted) {
+          setTimeout(aiTurn, 800);
+        }
+      } else { 
+        playerGrid[idx]=2; 
+        log('ИИ промахнулся: ' + formatIdx(idx)); 
+        playerTurn=true; 
+        turnIndicator.textContent='Вы'; 
+        render(); 
+      }
     }
 
     function aiPick(){
-      if(aiMemory.mode==='target' && aiMemory.lastHit!=null){
+      if(aiMemory.mode==='target' && aiMemory.hits.length > 0){
         const candidates = [];
-        const hits = aiMemory.hits.slice(-3);
-        const used = new Set(hits);
         const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
-        for(const h of hits){
-          const [r,c]=indexToCoord(h);
-          for(const [dr,dc] of dirs){
-            const nr=r+dr, nc=c+dc; if(nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE){const id=coordToIndex(nr,nc); if(playerGrid[id]===0) candidates.push(id);} }
+        
+        // Если есть несколько попаданий, пытаемся найти направление корабля
+        if(aiMemory.hits.length >= 2) {
+          const lastTwo = aiMemory.hits.slice(-2);
+          const [r1,c1] = indexToCoord(lastTwo[0]);
+          const [r2,c2] = indexToCoord(lastTwo[1]);
+          
+          // Определяем направление корабля
+          if(r1 === r2) { // горизонтальный корабль
+            const minC = Math.min(c1, c2);
+            const maxC = Math.max(c1, c2);
+            // Проверяем концы корабля
+            if(minC > 0 && playerGrid[coordToIndex(r1, minC-1)] === 0) {
+              candidates.push(coordToIndex(r1, minC-1));
+            }
+            if(maxC < SIZE-1 && playerGrid[coordToIndex(r1, maxC+1)] === 0) {
+              candidates.push(coordToIndex(r1, maxC+1));
+            }
+          } else if(c1 === c2) { // вертикальный корабль
+            const minR = Math.min(r1, r2);
+            const maxR = Math.max(r1, r2);
+            // Проверяем концы корабля
+            if(minR > 0 && playerGrid[coordToIndex(minR-1, c1)] === 0) {
+              candidates.push(coordToIndex(minR-1, c1));
+            }
+            if(maxR < SIZE-1 && playerGrid[coordToIndex(maxR+1, c1)] === 0) {
+              candidates.push(coordToIndex(maxR+1, c1));
+            }
+          }
         }
-        if(candidates.length>0) return candidates[Math.floor(Math.random()*candidates.length)];
-        aiMemory.mode='hunt'; aiMemory.hits=[];
+        
+        // Если не нашли направление или это первое попадание, стреляем вокруг последнего попадания
+        if(candidates.length === 0) {
+          const [r,c] = indexToCoord(aiMemory.lastHit);
+          for(const [dr,dc] of dirs){
+            const nr=r+dr, nc=c+dc; 
+            if(nr>=0 && nr<SIZE && nc>=0 && nc<SIZE){
+              const id=coordToIndex(nr,nc); 
+              if(playerGrid[id]===0) candidates.push(id);
+            }
+          }
+        }
+        
+        if(candidates.length > 0) {
+          return candidates[Math.floor(Math.random()*candidates.length)];
+        }
+        
+        // Если не нашли целей, переходим в режим охоты
+        aiMemory.mode='hunt'; 
+        aiMemory.hits=[];
+        aiMemory.lastHit = null;
       }
+      
+      // Режим охоты - стреляем по шахматной доске
       const options = [];
-      for(let i=0;i<SIZE*SIZE;i++){ if(playerGrid[i]===0){ const [r,c]=indexToCoord(i); if((r+c)%2===0) options.push(i); } }
-      if(options.length===0){ for(let i=0;i<SIZE*SIZE;i++) if(playerGrid[i]===0) options.push(i); }
+      for(let i=0;i<SIZE*SIZE;i++){ 
+        if(playerGrid[i]===0){ 
+          const [r,c]=indexToCoord(i); 
+          if((r+c)%2===0) options.push(i); 
+        } 
+      }
+      if(options.length===0){ 
+        for(let i=0;i<SIZE*SIZE;i++) {
+          if(playerGrid[i]===0) options.push(i); 
+        }
+      }
       return options[Math.floor(Math.random()*options.length)];
     }
 
     function markShipDamage(shipsArr, idx, who){
-      for(const s of shipsArr){ if(!s) continue; if(s.coords.includes(idx)){ 
-        }}
+      for(const s of shipsArr){ 
+        if(!s) continue; 
+        if(s.coords.includes(idx)){ 
+          // Корабль получил повреждение, проверим потоплен ли он
+          const allHit = s.coords.every(coord => {
+            return who === 'enemy' ? enemyGrid[coord] === 3 || enemyGrid[coord] === 4 : playerGrid[coord] === 3 || playerGrid[coord] === 4;
+          });
+          if(allHit && !s.sunk) {
+            s.sunk = true;
+            // Отмечаем все клетки корабля как потопленные
+            for(const coord of s.coords) {
+              if(who === 'enemy') {
+                enemyGrid[coord] = 4;
+              } else {
+                playerGrid[coord] = 4;
+              }
+            }
+          }
+          break;
+        }
+      }
     }
 
     function checkSunk(shipsArr, who){
-      for(const s of shipsArr){ if(!s || s.sunk) continue; const alive = s.coords.some(i=> (who==='enemy' ? enemyGrid[i]===1 : playerGrid[i]===1)); if(!alive){ s.sunk=true; // mark
-          for(const i of s.coords){ if(who==='enemy'){ enemyGrid[i]=4; } else { playerGrid[i]=4; } }
-          sunkCount += (who==='enemy'?1:0);
-          sunkCountEl.textContent = (enemyShips.filter(x=>x.sunk).length) + ' / ' + SHIPS.length;
+      let newSunk = false;
+      for(const s of shipsArr){ 
+        if(!s || s.sunk) continue; 
+        const allHit = s.coords.every(i => (who==='enemy' ? enemyGrid[i]===3 || enemyGrid[i]===4 : playerGrid[i]===3 || playerGrid[i]===4));
+        if(allHit){ 
+          s.sunk=true;
+          newSunk = true;
+          // Отмечаем все клетки корабля как потопленные
+          for(const i of s.coords){ 
+            if(who==='enemy'){ 
+              enemyGrid[i]=4; 
+            } else { 
+              playerGrid[i]=4; 
+            } 
+          }
           log((who==='enemy' ? 'Вы потопили корабль противника' : 'ИИ потопил ваш корабль') + ' (' + s.len + ' палуб)');
-        }}
+          
+          // Сбрасываем память ИИ при потоплении корабля игрока
+          if(who === 'player') {
+            aiMemory.mode = 'hunt';
+            aiMemory.targets = [];
+            aiMemory.lastHit = null;
+            aiMemory.hits = [];
+          }
+        }
+      }
+      
+      // Обновляем счетчик потопленных кораблей
+      const enemySunkCount = enemyShips.filter(x => x && x.sunk).length;
+      const playerSunkCount = playerShips.filter(x => x && x.sunk).length;
+      sunkCountEl.textContent = enemySunkCount + ' / ' + SHIPS.length;
+      
       render();
+      return newSunk;
     }
 
     function checkWin(){
