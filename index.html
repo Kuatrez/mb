@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Морской бой</title>
+  <style>
+    :root{
+      --bg:#f6f8fa; --card:#ffffff; --muted:#6b7280; --accent:#0ea5a0; --danger:#ef4444; --glass: rgba(255,255,255,0.6);
+      --cell-size: calc(min(48px, 8vw));
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0; background: linear-gradient(180deg,#eef2f7 0%,var(--bg) 100%); color:#0f172a; display:flex; align-items:center; justify-content:center; padding:28px;
+    }
+    .wrap{width:100%; max-width:1200px}
+    .header{display:flex; align-items:center; gap:16px; margin-bottom:18px}
+    .brand{display:flex;flex-direction:column}
+    h1{margin:0;font-size:18px}
+    p.lead{margin:0;color:var(--muted);font-size:13px}
+    .layout{display:grid;grid-template-columns:1fr 380px;gap:18px}
+    @media (max-width:880px){.layout{grid-template-columns:1fr;}}
+    .card{background:var(--card); border-radius:14px; padding:18px; box-shadow:0 6px 18px rgba(15,23,42,0.06)}
+    .boards{display:flex; gap:14px; align-items:flex-start; justify-content:center; flex-wrap:wrap}
+    .board-wrap{display:flex;flex-direction:column; align-items:center; gap:12px}
+    .title{font-size:13px;color:var(--muted)}
+    .grid{display:grid; grid-template-columns: repeat(10, var(--cell-size)); grid-template-rows: repeat(10, var(--cell-size)); gap:4px; padding:12px; background:linear-gradient(180deg,#f8fafc, #f1f5f9); border-radius:10px}
+    .cell{width:var(--cell-size); height:var(--cell-size); display:flex; align-items:center; justify-content:center; border-radius:6px; cursor:pointer; user-select:none; font-size:12px; color:transparent}
+    .cell:hover{outline:2px solid rgba(14,165,160,0.12)}
+    .cell.coord{background:transparent; cursor:default}
+    .cell.ship{background:linear-gradient(180deg, #a7f3d0, #34d399); color:transparent}
+    .cell.hit{background:linear-gradient(180deg,#ffedd5,#fb923c); color:#111}
+    .cell.miss{background:linear-gradient(180deg,#e6eef6,#dbeafe);}
+    .cell.sunk{background:linear-gradient(180deg,#fecaca,#ef4444); color:#111}
+    .controls{display:flex;flex-direction:column; gap:8px}
+    .row{display:flex; gap:8px; align-items:center}
+    button{background:var(--accent); color:#fff; border:0; padding:8px 12px; border-radius:10px; cursor:pointer; font-weight:600}
+    button.ghost{background:transparent; color:var(--accent); border:1px solid rgba(14,165,160,0.12)}
+    button.warn{background:var(--danger)}
+    .info{font-size:13px;color:var(--muted)}
+    .rack{display:flex; flex-direction:column; gap:6px; padding:10px; background:linear-gradient(180deg,#ffffff, #fbfdff); border-radius:10px}
+    .ship-item{display:flex; gap:10px; align-items:center; padding:6px 10px; border-radius:8px; background:var(--glass); cursor:grab}
+    .ship-size{display:inline-grid; grid-auto-flow:column; gap:4px}
+    .ship-dot{width:16px;height:16px;border-radius:3px;background:#d1fae5}
+    .status{padding:12px;border-radius:10px;background:linear-gradient(180deg,#fff,#fbfdff); font-size:14px}
+    .legend{display:flex; gap:8px; flex-wrap:wrap}
+    .legend .item{display:flex; gap:6px; align-items:center; font-size:13px}
+    .mini{width:14px;height:14px;border-radius:3px}
+    footer{margin-top:12px; font-size:12px; color:var(--muted); text-align:center}
+    @media (hover:none){.cell:hover{outline:0}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="layout">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;gap:12px;align-items:start;flex-wrap:wrap">
+          <div style="flex:1">
+            <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+              <div class="board-wrap">
+                <div class="title">Ваше поле</div>
+                <div id="playerBoard" class="grid"></div>
+              </div>
+
+              <div class="board-wrap">
+                <div class="title">Поле противника</div>
+                <div id="enemyBoard" class="grid"></div>
+              </div>
+            </div>
+          </div>
+
+          <aside style="width:320px;max-width:100%">
+            <div class="controls">
+              <div class="rack card" id="rack">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div style="font-weight:700">Постановка кораблей</div>
+                  <div class="info">Нажмите на корабль и затем на поле / используйте случайное</div>
+                </div>
+                <div id="shipsList"></div>
+                <div style="display:flex;gap:8px;margin-top:6px">
+                  <button id="randomBtn">Случайно</button>
+                  <button id="clearBtn" class="ghost">Сброс</button>
+                  <button id="rotateBtn" class="ghost">Повернуть</button>
+                </div>
+              </div>
+
+              <div class="status card">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <div><strong id="gameState">Размещение</strong><div class="info" id="subState">Разместите все корабли</div></div>
+                  <div style="text-align:right">
+                    <div class="info">Ваш ход: <span id="turnIndicator">—</span></div>
+                    <div class="info">Потоплено: <span id="sunkCount">0 / 10</span></div>
+                  </div>
+                </div>
+
+                <div style="margin-top:10px;display:flex;gap:8px">
+                  <button id="startBtn" class="ghost">Начать игру</button>
+                  <button id="restartBtn" class="warn">Перезапустить</button>
+                </div>
+                <div style="margin-top:10px" class="legend">
+                  <div class="item"><div class="mini" style="background:#d1fae5"></div>Корабль</div>
+                  <div class="item"><div class="mini" style="background: #fb923c"></div>Попадание</div>
+                  <div class="item"><div class="mini" style="background: #dbeafe"></div>Мимо</div>
+                </div>
+              </div>
+
+              <div class="card info" style="font-size:13px">Подсказка: кликом по полю противника выстреливаете. ИИ использует простой алгоритм поиска и добивания.</div>
+            </div>
+          </aside>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3 style="margin-top:0">Логи</h3>
+        <div id="log" style="min-height:260px; max-height:520px; overflow:auto; font-size:13px; color:var(--muted)"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SIZE = 10;
+    const SHIPS = [4,3,3,2,2,2,1,1,1,1];
+    const playerBoardEl = document.getElementById('playerBoard');
+    const enemyBoardEl = document.getElementById('enemyBoard');
+    const shipsListEl = document.getElementById('shipsList');
+    const randomBtn = document.getElementById('randomBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const rotateBtn = document.getElementById('rotateBtn');
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const logEl = document.getElementById('log');
+    const gameStateEl = document.getElementById('gameState');
+    const subStateEl = document.getElementById('subState');
+    const turnIndicator = document.getElementById('turnIndicator');
+    const sunkCountEl = document.getElementById('sunkCount');
+
+    function coordToIndex(r,c){return r*SIZE+c}
+    function indexToCoord(i){return [Math.floor(i/SIZE), i%SIZE]}
+    function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
+    function log(s){const d=document.createElement('div'); d.textContent=s; logEl.prepend(d)}
+
+    let playerGrid = []; 
+    let enemyGrid = [];
+    let playerShips = [];
+    let enemyShips = [];
+    let placing = true;
+    let placingShipIndex = null;
+    let placingOrientation = 'h';
+    let gameStarted = false;
+    let playerTurn = true;
+    let sunkCount = 0;
+
+    let aiMemory = {mode:'hunt', targets:[], lastHit:null, hits:[]};
+
+    function createGrid(el, idPrefix){
+      el.innerHTML='';
+      for(let r=0;r<SIZE;r++){
+        for(let c=0;c<SIZE;c++){
+          const cell = document.createElement('div');
+          cell.className='cell';
+          cell.dataset.r=r; cell.dataset.c=c;
+          cell.id = idPrefix + '-' + r + '-' + c;
+          el.appendChild(cell);
+        }
+      }
+    }
+
+    function resetState(){
+      playerGrid = new Array(SIZE*SIZE).fill(0);
+      enemyGrid  = new Array(SIZE*SIZE).fill(0);
+      playerShips = [];
+      enemyShips = [];
+      placing = true; placingShipIndex = null; placingOrientation='h';
+      gameStarted = false; playerTurn = true; sunkCount=0; aiMemory={mode:'hunt',targets:[],lastHit:null,hits:[]};
+      gameStateEl.textContent='Размещение'; subStateEl.textContent='Разместите все корабли'; turnIndicator.textContent='—'; sunkCountEl.textContent='0 / ' + SHIPS.length;
+      logEl.innerHTML='';
+      renderShipsList(); render();
+    }
+
+    function renderShipsList(){
+      shipsListEl.innerHTML='';
+      SHIPS.forEach((len, idx)=>{
+        const used = playerShips[idx]!=null;
+        const div = document.createElement('div'); div.className='ship-item'; div.draggable=true; div.dataset.idx=idx; if(used) div.style.opacity=0.45;
+        div.innerHTML=`<div style="font-weight:600">${len}</div><div class="ship-size">${Array.from({length:len}).map(()=>'<div class="ship-dot"></div>').join('')}</div>`;
+        div.addEventListener('click', ()=>{if(!used){placingShipIndex=idx; log('Выбрали корабль ' + len + ' палуб');}});
+        div.addEventListener('dragstart',(e)=>{if(used) e.preventDefault(); else placingShipIndex=idx;});
+        shipsListEl.appendChild(div);
+      });
+    }
+
+    function canPlace(grid, r,c,len, orient){
+      if(orient==='h'){
+        if(c+len>SIZE) return false;
+        for(let j=c;j<c+len;j++) if(grid[coordToIndex(r,j)]===1) return false;
+        for(let i=Math.max(0,r-1);i<=Math.min(SIZE-1,r+1);i++){
+          for(let j=Math.max(0,c-1);j<=Math.min(SIZE-1,c+len);j++){
+            if(grid[coordToIndex(i,j)]===1) return false;
+          }
+        }
+      } else {
+        if(r+len>SIZE) return false;
+        for(let i=r;i<r+len;i++) if(grid[coordToIndex(i,c)]===1) return false;
+        for(let i=Math.max(0,r-1);i<=Math.min(SIZE-1,r+len);i++){
+          for(let j=Math.max(0,c-1);j<=Math.min(SIZE-1,c+1);j++){
+            if(grid[coordToIndex(i,j)]===1) return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function placeShip(grid, shipsArr, idx, r,c,len, orient){
+      const coords=[];
+      if(orient==='h'){
+        for(let j=c;j<c+len;j++){grid[coordToIndex(r,j)]=1; coords.push(coordToIndex(r,j));}
+      } else {
+        for(let i=r;i<r+len;i++){grid[coordToIndex(i,c)]=1; coords.push(coordToIndex(i,c));}
+      }
+      shipsArr[idx]={len,coords,sunk:false};
+    }
+
+    function render(){
+      for(let i=0;i<SIZE*SIZE;i++){
+        const [r,c] = indexToCoord(i);
+        const el = document.getElementById('player-' + r + '-' + c);
+        el.className='cell';
+        if(playerGrid[i]===1) el.classList.add('ship');
+        if(playerGrid[i]===2) el.classList.add('miss');
+        if(playerGrid[i]===3) el.classList.add('hit');
+        if(playerGrid[i]===4) el.classList.add('sunk');
+        el.textContent='';
+      }
+      for(let i=0;i<SIZE*SIZE;i++){
+        const [r,c] = indexToCoord(i);
+        const el = document.getElementById('enemy-' + r + '-' + c);
+        el.className='cell';
+        if(enemyGrid[i]===2) el.classList.add('miss');
+        if(enemyGrid[i]===3) el.classList.add('hit');
+        if(enemyGrid[i]===4) el.classList.add('sunk');
+        el.textContent='';
+      }
+    }
+    function setupListeners(){
+      playerBoardEl.addEventListener('click', (e)=>{
+        const cell = e.target.closest('.cell'); if(!cell) return;
+        const r = parseInt(cell.dataset.r); const c = parseInt(cell.dataset.c);
+        if(!placing) return;
+        if(placingShipIndex==null){ log('Выберите корабль слева.'); return; }
+        const len = SHIPS[placingShipIndex];
+        if(canPlace(playerGrid,r,c,len,placingOrientation)){
+          placeShip(playerGrid, playerShips, placingShipIndex, r,c,len,placingOrientation);
+          placingShipIndex=null; renderShipsList(); render();
+          checkAllPlaced();
+          log('Корабль поставлен: ' + len + ' палуб');
+        } else { log('Нельзя поставить здесь.'); }
+      });
+
+      enemyBoardEl.addEventListener('click', (e)=>{
+        if(!gameStarted || !playerTurn) return;
+        const cell = e.target.closest('.cell'); if(!cell) return;
+        const r = parseInt(cell.dataset.r); const c = parseInt(cell.dataset.c);
+        const idx = coordToIndex(r,c);
+        if(enemyGrid[idx]===2 || enemyGrid[idx]===3) return; // already shot
+        playerShoot(idx);
+      });
+
+      enemyBoardEl.addEventListener('dragover', (e)=>e.preventDefault());
+      playerBoardEl.addEventListener('dragover', (e)=>e.preventDefault());
+      playerBoardEl.addEventListener('drop',(e)=>{e.preventDefault(); const cell=e.target.closest('.cell'); if(!cell) return; const r=parseInt(cell.dataset.r), c=parseInt(cell.dataset.c); if(placingShipIndex==null) return; const len=SHIPS[placingShipIndex]; if(canPlace(playerGrid,r,c,len,placingOrientation)){placeShip(playerGrid,playerShips,placingShipIndex,r,c,len,placingOrientation); placingShipIndex=null; renderShipsList(); render(); checkAllPlaced(); log('Корабль поставлен: '+len+' палуб');} else log('Нельзя поставить здесь.');});
+
+      rotateBtn.addEventListener('click', ()=>{placingOrientation = placingOrientation==='h'?'v':'h'; log('Ориентация: ' + (placingOrientation==='h'?'горизонтально':'вертикально'));});
+      randomBtn.addEventListener('click', ()=>{randomPlace(playerGrid, playerShips); renderShipsList(); render(); checkAllPlaced(); log('Случайная постановка завершена.');});
+      clearBtn.addEventListener('click', ()=>{resetState(); randomPlace(enemyGrid, enemyShips); render(); log('Поля очищены.');});
+      startBtn.addEventListener('click', ()=>{if(playerShips.length!==SHIPS.length){log('Разместите все корабли перед началом.'); return;} startGame();});
+      restartBtn.addEventListener('click', ()=>{resetState(); randomPlace(enemyGrid, enemyShips); render(); log('Игра перезапущена.');});
+    }
+
+    function checkAllPlaced(){
+      if(playerShips.length===SHIPS.length && playerShips.every(s=>s!=null)){
+        placing=false; gameStateEl.textContent='Готов'; subStateEl.textContent='Нажмите "Начать игру" или разместите противника случайно.'; turnIndicator.textContent='—';
+      }
+    }
+    
+    function randomPlace(grid, shipsArr){
+      for(let i=0;i<SIZE*SIZE;i++) grid[i]=0;
+      shipsArr.length=0;
+      const orders = Array.from({length:SHIPS.length}, (_,i)=>i);
+      shuffle(orders);
+      for(const idx of orders){
+        const len = SHIPS[idx];
+        let placed=false; let tries=0;
+        while(!placed && tries<500){
+          const r = Math.floor(Math.random()*SIZE);
+          const c = Math.floor(Math.random()*SIZE);
+          const orient = Math.random()<0.5 ? 'h' : 'v';
+          if(canPlace(grid,r,c,len,orient)){
+            placeShip(grid, shipsArr, idx, r,c,len,orient); placed=true;
+          }
+          tries++;
+        }
+        if(!placed) { randomPlace(grid, shipsArr); return; }
+      }
+    }
+
+    function startGame(){
+      if(gameStarted) return;
+      gameStarted=true; placing=false; log('Игра началась.');
+      if(enemyShips.length===0) randomPlace(enemyGrid, enemyShips);
+      gameStateEl.textContent='Игра'; subStateEl.textContent='Выстреливайте по полю противника';
+      playerTurn = Math.random()<0.5; turnIndicator.textContent = playerTurn ? 'Вы' : 'ИИ';
+      render();
+      if(!playerTurn) setTimeout(aiTurn, 700);
+    }
+
+    function playerShoot(idx){
+      if(enemyGrid[idx]===2||enemyGrid[idx]===3) return; 
+      if(enemyGrid[idx]===1){
+        enemyGrid[idx]=3; log('Вы попали в ' + formatIdx(idx));
+        markShipDamage(enemyShips, idx, 'enemy');
+        render(); checkSunk(enemyShips, 'enemy');
+        checkWin();
+      } else {
+        enemyGrid[idx]=2; log('Вы промахнулись: ' + formatIdx(idx)); playerTurn=false; turnIndicator.textContent='ИИ'; render(); setTimeout(aiTurn, 700);
+      }
+    }
+
+    function aiTurn(){
+      const idx = aiPick();
+      if(playerGrid[idx]===2||playerGrid[idx]===3){ 
+        aiTurn(); return;
+      }
+      if(playerGrid[idx]===1){ playerGrid[idx]=3; log('ИИ попал в ' + formatIdx(idx)); aiMemory.mode='target'; aiMemory.lastHit=idx; aiMemory.hits.push(idx); markShipDamage(playerShips, idx, 'player'); render(); checkSunk(playerShips, 'player'); // AI gets another turn
+        checkWin(); setTimeout(aiTurn, 500);
+      } else { playerGrid[idx]=2; log('ИИ промахнулся: ' + formatIdx(idx)); playerTurn=true; turnIndicator.textContent='Вы'; render(); }
+    }
+
+    function aiPick(){
+      if(aiMemory.mode==='target' && aiMemory.lastHit!=null){
+        const candidates = [];
+        const hits = aiMemory.hits.slice(-3);
+        const used = new Set(hits);
+        const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+        for(const h of hits){
+          const [r,c]=indexToCoord(h);
+          for(const [dr,dc] of dirs){
+            const nr=r+dr, nc=c+dc; if(nr>=0&&nr<SIZE&&nc>=0&&nc<SIZE){const id=coordToIndex(nr,nc); if(playerGrid[id]===0) candidates.push(id);} }
+        }
+        if(candidates.length>0) return candidates[Math.floor(Math.random()*candidates.length)];
+        aiMemory.mode='hunt'; aiMemory.hits=[];
+      }
+      const options = [];
+      for(let i=0;i<SIZE*SIZE;i++){ if(playerGrid[i]===0){ const [r,c]=indexToCoord(i); if((r+c)%2===0) options.push(i); } }
+      if(options.length===0){ for(let i=0;i<SIZE*SIZE;i++) if(playerGrid[i]===0) options.push(i); }
+      return options[Math.floor(Math.random()*options.length)];
+    }
+
+    function markShipDamage(shipsArr, idx, who){
+      for(const s of shipsArr){ if(!s) continue; if(s.coords.includes(idx)){ 
+        }}
+    }
+
+    function checkSunk(shipsArr, who){
+      for(const s of shipsArr){ if(!s || s.sunk) continue; const alive = s.coords.some(i=> (who==='enemy' ? enemyGrid[i]===1 : playerGrid[i]===1)); if(!alive){ s.sunk=true; // mark
+          for(const i of s.coords){ if(who==='enemy'){ enemyGrid[i]=4; } else { playerGrid[i]=4; } }
+          sunkCount += (who==='enemy'?1:0);
+          sunkCountEl.textContent = (enemyShips.filter(x=>x.sunk).length) + ' / ' + SHIPS.length;
+          log((who==='enemy' ? 'Вы потопили корабль противника' : 'ИИ потопил ваш корабль') + ' (' + s.len + ' палуб)');
+        }}
+      render();
+    }
+
+    function checkWin(){
+      const enemySunkAll = enemyShips.every(s=>s && s.sunk);
+      const playerSunkAll = playerShips.every(s=>s && s.sunk);
+      if(enemySunkAll || playerSunkAll){ gameStarted=false; gameStateEl.textContent='Игра окончена'; subStateEl.textContent = enemySunkAll? 'Вы выиграли!' : 'Вы проиграли'; turnIndicator.textContent='—'; log('Игра окончена: ' + (enemySunkAll? 'Вы победили' : 'ИИ победил'));
+      }
+    }
+
+    function formatIdx(idx){const [r,c]=indexToCoord(idx); return String.fromCharCode(65+c)+ (r+1);}
+    createGrid(playerBoardEl, 'player');
+    createGrid(enemyBoardEl, 'enemy');
+    resetState();
+    setupListeners();
+    randomPlace(enemyGrid, enemyShips);
+    renderShipsList();
+    render();
+    let lastTap=null; document.addEventListener('touchend',(e)=>{const now=Date.now(); if(lastTap && now-lastTap<300){ placingOrientation=placingOrientation==='h'?'v':'h'; log('Ориентация: ' + (placingOrientation==='h'?'горизонтально':'вертикально')); lastTap=null; } else lastTap=now;});
+
+  </script>
+</body>
+</html>
